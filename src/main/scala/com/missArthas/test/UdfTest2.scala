@@ -22,7 +22,7 @@ object UdfTest2 {
       .toDF("ID", "loginIP")
     table.registerTempTable("table")
 
-    sqlContext.udf.register("list_size", (s: String) => s.split(",").size)
+    sqlContext.udf.register("list_size", (s: String) => s.split(',').size)
 
     /*
     val sql =

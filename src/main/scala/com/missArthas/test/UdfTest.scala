@@ -5,10 +5,10 @@ import org.apache.spark.sql.SQLContext
 import org.apache.spark.{SparkConf, SparkContext}
 
 /**
-  * Created by zxh on 2016/6/10.
+  * Created by nali on 2017/12/14.
   */
 object UdfTest {
-  Logger.getLogger("org").setLevel(Level.ERROR)
+    Logger.getLogger("org").setLevel(Level.ERROR)
 
   def main(args: Array[String]): Unit = {
     val conf = new SparkConf().setAppName("Simple Application").setMaster("local")
@@ -17,7 +17,7 @@ object UdfTest {
 
     import sqlContext.implicits._
 
-    val data = sc.parallelize(Seq(("a", 1), ("bb", 5), ("cccc", 10), ("d", 15))).toDF("name", "num")
+    val data = sc.parallelize(Seq(("a", 1), ("bb", 5), ("cccc", 10), ("d", 15))).toDF("a", "b")
     data.registerTempTable("data")
 
 
@@ -47,6 +47,8 @@ object UdfTest {
     }
 
 
+
+      /*
     {
       //函数体使用Column类型，无法注册到sqlContext.udf
       //使用udf包装后，每列都必须输入column，能否我们自己定义呢，比如一个参数是Column，一个是其他类型
@@ -66,8 +68,8 @@ object UdfTest {
 
     }
     //最后，我们写一个相对通用的吧
+    */
 
-    
     {
       //定义两个函数体，入参一个使用column类型，一个使用原生类型，将原生类型函数注册到sqlContext.udf
 

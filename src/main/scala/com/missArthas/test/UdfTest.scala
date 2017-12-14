@@ -30,6 +30,10 @@ object UdfTest {
         str.length > _length;
       }
 
+      //增加方法addOne
+      def addOne(str: String, x: Int): Int = str.toInt + 1
+      sqlContext.udf.register("addOne", addOne _)
+
       //注册函数体到当前sqlContext，注意，注册到sqlContext的函数体，参数不能为Column
       //注册后，可以在以下地方使用：1、df.selectExpr 2、df.filter ,3、将该df注册为temptable，之后在sql中使用
       sqlContext.udf.register("filter_length", filter_length_f)
@@ -38,6 +42,7 @@ object UdfTest {
 
       data.select($"*", filter_length($"a", lit(2))).show //使用udf包装过的，必须传入Column，注意 lit(2)
       data.selectExpr("*", " filter_length(a,2) as ax").show //select 若写表达式调用函数，则需要使用selectExpr
+      data.selectExpr("*", " addOne(b,1) as bplus1").show
 
       data.filter(filter_length($"a", lit(2))).show //同select
       data.filter("filter_length(a,2)").show //filter调用表达式，可以直接使用df.filter函数，
@@ -46,29 +51,6 @@ object UdfTest {
       sqlContext.sql("select *,filter_length(a,2) from data where filter_length(a,2)").show
     }
 
-
-
-      /*
-    {
-      //函数体使用Column类型，无法注册到sqlContext.udf
-      //使用udf包装后，每列都必须输入column，能否我们自己定义呢，比如一个参数是Column，一个是其他类型
-      import org.apache.spark.sql.functions._
-      import org.apache.spark.sql.Column
-
-      val filter_length_f2 = (str: Column, _length: Int) => {
-        length(str) > _length
-      }
-      sqlContext.udf.register("filter_length", filter_length_f2) //todo：不好意思，这里注册不了，注册到sqlContext.udf的函数，入参不支持Column类型
-
-      data.select($"*", filter_length_f2($"a", 2)).show //不用udf包装，我们就可以完全自定义，这时 length 就可以传入整型了
-      data.selectExpr("*", " filter_length_f2(a,2) as ax").show //todo：不好意思，这里用不了了，
-
-      data.filter(filter_length_f2($"a", 2)).show //同select
-      data.filter("filter_length(a,2)").show //todo：不好意思，这里用不了了
-
-    }
-    //最后，我们写一个相对通用的吧
-    */
 
     {
       //定义两个函数体，入参一个使用column类型，一个使用原生类型，将原生类型函数注册到sqlContext.udf

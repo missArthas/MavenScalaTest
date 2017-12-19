@@ -1,20 +1,12 @@
 package com.missArthas.mllib
 
-import java.util.Comparator
-
-import scala.collection.JavaConversions.seqAsJavaList
 import org.apache.spark.SparkConf
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.apache.spark.rdd.RDD.rddToPairRDDFunctions
-import com.google.common.primitives.Doubles
-import java.text.DecimalFormat
 
-import com.missArthas.SparkLearning.ItemBasedCF
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.{DataFrame, Row, SQLContext}
-
-
 
 
 class JaccardSimilarity extends java.io.Serializable{
@@ -24,40 +16,21 @@ class JaccardSimilarity extends java.io.Serializable{
     * @param data (userID, itemID)不重复
     * @return
     */
-  def simAll(data: DataFrame, itemNumStrict:(Int, Int)) = {
-    //每个物品对应的对他有过记录的用户集
-    val itemUserSet = data.rdd.map{
-      case Row(userID, movieID, score) => (movieID, Set(userID))
-    }.reduceByKey((a, b) => a.union(b))
-      .filter(f => f._2.size > itemNumStrict._1 && f._2.size <= itemNumStrict._2)
+  def simMatrix(data: DataFrame, itemNumStrict:(Int, Int)) :RDD[((Int, Int), Double)] = {
+    //DataFrame转化成RDD
+    val dataRDD = data.rdd.map{case Row(userID: Int, itemID: Int, score: Double) => (userID, itemID, score)}
 
-    //笛卡尔积,大量运算
-    val cartesianResult = itemUserSet cartesian itemUserSet
-
-    //(s._1._1, s._2._1)是物品id对
-    val itemSimMatrix = cartesianResult.map(s => ( (s._1._1, s._2._1),
-      s._1._2.intersect(s._2._2).size.toDouble / s._1._2.union(s._2._2).size)
-    ).filter(f => f._1._1 !=f._1._2)
+    //jaccard相似度，交集／并集
+    val itemSimMatrix = simMatrix(dataRDD, itemNumStrict)
 
     itemSimMatrix
   }
 
-  def simAll(data: DataFrame, itemNumStrict:(Int, Int), topk: Int) = {
-    //每个物品对应的对他有过记录的用户集
-    val itemUserSet = data.rdd.map{
-      case Row(userID, movieID, score) => (movieID, Set(userID))
-    }.reduceByKey((a, b) => a.union(b))
-      .filter(f => f._2.size > itemNumStrict._1 && f._2.size <= itemNumStrict._2)
+  def simItems(data: DataFrame, itemNumStrict:(Int, Int), topk: Int=10) = {
+    //笛卡尔积之后，item之间的相似度
+    val itemSimMatrix = simMatrix(data, itemNumStrict)
 
-    //笛卡尔积,大量运算
-    val cartesianResult = itemUserSet cartesian itemUserSet
-
-    //(s._1._1, s._2._1)是物品id对
-    val itemSimMatrix = cartesianResult.map(s => ( (s._1._1, s._2._1),
-      s._1._2.intersect(s._2._2).size.toDouble / s._1._2.union(s._2._2).size)
-    ).filter(f => f._1._1 !=f._1._2)
-
-    //对每个物品的相似物品列表排序，取topk
+    //给出每种item的最相似的topk
     val itemSimTopK = itemSimMatrix.map{ case((id1, id2), score) => (id1, Seq((id2, score)))}
       .reduceByKey((a, b) => a.union(b))
       .map{case (id,scores) => (id,scores.sortWith(_._2 > _._2).take(topk)) }
@@ -65,15 +38,17 @@ class JaccardSimilarity extends java.io.Serializable{
     itemSimTopK
   }
 
-  def simAll(data: RDD[(Int, Int, Double)], itemNumStrict:(Int, Int)) = {
+  def simMatrix(data: RDD[(Int, Int, Double)], itemNumStrict:(Int, Int)) :RDD[((Int, Int), Double)] = {
+    //对item有过记录的user集合
     val itemToUser = data.map{
-      case (userID, movieID, score) => (movieID, Set(userID))
+      case (userID, itemID, score) => (itemID, Set(userID))
     }.reduceByKey((a, b) => a.union(b))
 
-    val t = itemToUser.collectAsMap()
-
+    //笛卡尔积,大量运算
     val cartesianResult = itemToUser cartesian itemToUser
 
+    //jaccard相似度，交集／并集
+    //(s._1._1, s._2._1)是物品id对
     val itemSimMatrix = cartesianResult.map(s => ( (s._1._1, s._2._1),
       s._1._2.intersect(s._2._2).size.toDouble / s._1._2.union(s._2._2).size)
     ).filter(f => f._1._1 !=f._1._2)
@@ -117,11 +92,12 @@ object JaccardSimilarity extends java.io.Serializable{
 
 
     val cf = new JaccardSimilarity()
-    val result = cf.simAll(ratingDF, (1, 50))
+    val result = cf.simMatrix(ratingDF, (1, 50))
+    result.foreach(s => println(s._1 + " " + s._2))
     val endtime = System.nanoTime
     println((endtime-starttime)*1.0/100000000)
 
-    val result2 = cf.simAll(ratingDF, (1, 50), 2)
+    val result2 = cf.simItems(ratingDF, (1, 50))
     result2.foreach(s => println(s._1 + " " + s._2))
   }
 }

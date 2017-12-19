@@ -18,7 +18,6 @@ object DataFrameTest {
     val conf = new SparkConf().setAppName("Simple Application").setMaster("local")
     val sc = new SparkContext(conf)
     val sqlContext = new SQLContext(sc)
-
     import sqlContext.implicits._
 
     val tmpRatings = sqlContext.read.text(ratingsFile).as[String]

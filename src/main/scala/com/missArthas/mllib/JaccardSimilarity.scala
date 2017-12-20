@@ -11,23 +11,31 @@ import org.apache.spark.sql.{DataFrame, Row, SQLContext}
 class JaccardSimilarity extends java.io.Serializable{
 
   /**
-    * 计算item的相关item
+    * 计算所有item的相关item，输入是DataFrame形式
     * @param data (userID, itemID)不重复
+    * @param itemNumStrict(a,b) a是最少，b是最大
     * @return
     */
-  def allItemSim(data: DataFrame, itemNumStrict:(Int, Int)) :RDD[((Int, Int), Double)] = {
+  def simMatrix(data: DataFrame, itemNumStrict:(Int, Int)) :RDD[((Int, Int), Double)] = {
     //DataFrame转化成RDD
     val dataRDD = data.rdd.map{case Row(userID: Int, itemID: Int, score: Double) => (userID, itemID, score)}
 
     //jaccard相似度，交集／并集
-    val itemSimMatrix = allItemSim(dataRDD, itemNumStrict)
+    val itemSimMatrix = simMatrix(dataRDD, itemNumStrict)
 
     itemSimMatrix
   }
 
-  def allItem(data: DataFrame, topK: Int = Int.MaxValue, itemNumStrict:(Int, Int) = (Int.MinValue, Int.MaxValue)) = {
+  /**
+    * 计算所有item的相关item，取topK
+    * @param data (userID, itemID)不重复
+    * @param topK 每个item取相似的topK
+    * @param itemNumStrict(a,b) a是最少，b是最大
+    * @return
+    */
+  def simMatrixWithTopk(data: DataFrame, topK: Int = Int.MaxValue, itemNumStrict:(Int, Int) = (Int.MinValue, Int.MaxValue)) = {
     //笛卡尔积之后，item之间的相似度
-    val itemSimMatrix = allItemSim(data, itemNumStrict)
+    val itemSimMatrix = simMatrix(data, itemNumStrict)
 
     //给出每种item的最相似的topk
     val itemSimTopK = itemSimMatrix.map{ case((id1, id2), score) => (id1, Seq((id2, score)))}
@@ -37,10 +45,18 @@ class JaccardSimilarity extends java.io.Serializable{
     itemSimTopK
   }
 
-  def itemSim(itemList: DataFrame, ratings: DataFrame, topK: Int, itemNumStrict:(Int, Int) = (Int.MinValue, Int.MaxValue)) = {
+  /**
+    * 计算itemList里item的相关item，取topK
+    * @param itemList 要计算的目标item集合，可以是1个，可以是多个
+    * @param data (userID, itemID)不重复
+    * @param topK 每个item取相似的topK
+    * @param itemNumStrict(a,b) a是最少，b是最大
+    * @return
+    */
+  def itemsRelated(itemList: DataFrame, data: DataFrame, topK: Int, itemNumStrict:(Int, Int) = (Int.MinValue, Int.MaxValue)) = {
     //对item有过记录的user集合
     //选出itemList
-    val allItemToUser = ratings.rdd.map{
+    val allItemToUser = data.rdd.map{
       case Row(userID, itemID, score) => (itemID, Set(userID))
     }.reduceByKey((a, b) => a.union(b))
       .filter(f => f._2.size >= itemNumStrict._1 && f._2.size <= itemNumStrict._2)
@@ -66,7 +82,13 @@ class JaccardSimilarity extends java.io.Serializable{
     itemSimTopK
   }
 
-  private def allItemSim(data: RDD[(Int, Int, Double)], itemNumStrict:(Int, Int) = (Int.MinValue, Int.MaxValue))  :RDD[((Int, Int), Double)] = {
+  /**
+    * 计算所有item的相关item，输入的RDD形式
+    * @param data (userID, itemID)不重复
+    * @param itemNumStrict(a,b) a是最少，b是最大
+    * @return
+    */
+  private def simMatrix(data: RDD[(Int, Int, Double)], itemNumStrict:(Int, Int) = (Int.MinValue, Int.MaxValue))  :RDD[((Int, Int), Double)] = {
     //对item有过记录的user集合
     val itemToUser = data.map{
       case (userID, itemID, score) => (itemID, Set(userID))
@@ -126,7 +148,7 @@ object JaccardSimilarity extends java.io.Serializable{
 //    result2.foreach(s => println(s._1 + " " + s._2))
 
     val itemList = List(1, 2).toDF("userID")
-    val result3 = cf.itemSim(itemList, ratingDF, 2)
+    val result3 = cf.itemsRelated(itemList, ratingDF, 2)
     println("排序计算结果")
     result3.foreach(s => println(s._1 + " " + s._2))
   }

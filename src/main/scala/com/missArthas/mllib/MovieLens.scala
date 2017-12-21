@@ -29,7 +29,7 @@ object MovieLens {
 //    }
 
     // 设置运行环境
-    val conf = new SparkConf().setAppName("MovieLensALS").setMaster("local[4]")
+    val conf = new SparkConf().setAppName("MovieLensALS").setMaster("local")
     val sc = new SparkContext(conf)
 
     // 装载用户评分，该评分由评分器生成

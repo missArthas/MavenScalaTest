@@ -6,6 +6,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.rdd.RDD.rddToPairRDDFunctions
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.sql.{DataFrame, Row, SQLContext}
+import org.apache.spark.storage.StorageLevel
 
 
 class JaccardSimilarity extends java.io.Serializable{
@@ -60,20 +61,25 @@ class JaccardSimilarity extends java.io.Serializable{
       case Row(userID, itemID, score) => (itemID, Set(userID))
     }.reduceByKey((a, b) => a.union(b))
       .filter(f => f._2.size >= itemNumStrict._1 && f._2.size <= itemNumStrict._2)
-    println("item数量：", allItemToUser.count())
+    println("所有item数量：", allItemToUser.count())
+    itemList.rdd.foreach(println)
 
     //广播映射表表
     val choosedItemMap = itemList.rdd.map{
       case Row(itemID) => (itemID, true)
-    }.collectAsMap()
-    println("目标item map size:", choosedItemMap.size)
+    }
+    println("需要计算的item数量:", choosedItemMap.count())
 
-    val choosedItemMapBC = sc.broadcast(choosedItemMap)
+    val choosedItemMapBC = sc.broadcast(choosedItemMap.collectAsMap())
     val choosedItemToUser = allItemToUser.filter(item => choosedItemMapBC.value.getOrElse(item._1, false))
+    println("目标items经过映射筛选之后数量:", choosedItemToUser.count())
+    println("测试map 的key，value类型")
+    println("user id string: 11676655:", choosedItemMapBC.value.getOrElse("11676655", false))
+    println("user id int: 11759520:", choosedItemMapBC.value.getOrElse(11759520,false))
 
     //笛卡尔积,大量运算
     val cartesianResult = choosedItemToUser cartesian allItemToUser
-    println("笛卡尔积结果size", cartesianResult.count())
+    println("笛卡尔积结果size：", cartesianResult.count())
 
     //jaccard相似度，交集／并集
     //(s._1._1, s._2._1)是物品id对
@@ -154,13 +160,37 @@ object JaccardSimilarity extends java.io.Serializable{
     //    result2.foreach(s => println(s._1 + " " + s._2))
 
     val itemList = List(1, 2).toDF("userID")
-    val result3 = cf.itemsRelated(sc,itemList, ratingDF, 2)
-
-    println("排序计算结果")
-    result3.take(100).foreach(s => println(s._1+" "+s._2.toSeq))
-    //println(result3.take(100).foreach(s => print(s._1+" "+s._2)))
+    val result3 = cf.itemsRelated(sc, itemList, ratingDF, 2)
     println("排序计算结果")
     result3.foreach(s => println(s._1 + " " + s._2.toSeq))
+
+    val result4 = linkOldAlbum(result3)
+    println("最终结果")
+    result4.foreach(s => println(s._1 + " " + s._2.toSeq))
+  }
+
+  /**
+    * X->B,C,D
+    *
+    * @param result
+    * @return X->B,C,D
+    *         B->X
+    *         C->X
+    *         D->X
+    */
+  private def linkOldAlbum(result: RDD[(Long, Array[(Long, Float)])]): RDD[(Long, Array[(Long, Float)])]={
+
+    val reverseItem = result.flatMap{
+      case (itemID, arr) =>
+        val list = arr.toList
+        //子集配对
+        val reverseItem = list.map { t => (t._1, Array((itemID, t._2))) }
+        reverseItem
+      }.reduceByKey((a, b) => a.union(b)).union(result).reduceByKey((a, b) => a.union(b))
+
+    val finalResult = reverseItem.map{case (id,scores) => (id,scores.distinct.sortWith(_._2 > _._2)) }
+
+    finalResult
   }
 
 }

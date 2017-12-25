@@ -1,12 +1,15 @@
 package com.missArthas.ml
 
 import org.apache.log4j.{Level, Logger}
+import org.apache.spark.ml.Pipeline
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.ml.feature.VectorAssembler
 import org.apache.spark.ml.classification.LogisticRegression
-import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
+import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, RegressionEvaluator}
+import org.apache.spark.ml.tuning.{CrossValidator, ParamGridBuilder, TrainValidationSplit}
+import org.dmg.pmml.False
 
 object LogisticRegressionTest {
   Logger.getLogger("org").setLevel(Level.ERROR)
@@ -640,7 +643,9 @@ object LogisticRegressionTest {
     data.createOrReplaceTempView("df")
 
     //dataExplore(data)
-    train(spark, data)
+    //train(spark, data)
+    //auc(spark, data)
+    crossValidate(spark, data)
 
 
   }
@@ -703,9 +708,90 @@ object LogisticRegressionTest {
     objectiveHistory.foreach(loss => println(loss))
 
 
-    /**结果展示
+    /**
       *
       * */
+
+  }
+
+  def crossValidate(spark: SparkSession, data: DataFrame): Unit ={
+    val affairs = "case when affairs>0 then 1 else 0 end as label,"
+    val gender = "case when gender='female' then 0 else 1 end as gender,"
+    val children = "case when children='yes' then 1 else 0 end as children,"
+
+    val sqlDF = spark.sql("select " +
+      affairs +
+      gender +
+      "age,yearsmarried," +
+      children +
+      "religiousness,education,occupation,rating" +
+      " from df ")
+    sqlDF.show(10)
+    val colArray2 = Array("gender", "age", "yearsmarried", "children", "religiousness", "education", "occupation", "rating")
+    val vecDF: DataFrame = new VectorAssembler().setInputCols(colArray2).setOutputCol("features").transform(sqlDF)
+    val Array(trainingDF, testDF) = vecDF.randomSplit(Array(0.7, 0.3), seed = 12345)
+    val lrModel = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").fit(trainingDF)
+
+    println("训练集数量：", trainingDF.count())
+    println("测试集数量：", testDF.count())
+    val predictions = lrModel.transform(testDF)
+
+
+    val evaluator = new BinaryClassificationEvaluator().setLabelCol("label")
+    val auc = evaluator.evaluate(predictions)
+    println("auc:", auc)
+
+    val t = predictions.where("label = prediction").count()
+    println("测试集正确率", t*1.0/testDF.count())
+
+
+    val lr = new LogisticRegression()
+      .setMaxIter(10)
+    val paramGrid = new ParamGridBuilder()
+      .addGrid(lr.regParam, Array(0.1, 0.01))
+      .addGrid(lr.fitIntercept, Array(false, true))
+      //.addGrid(lr.elasticNetParam, [0.0, 0.5, 1.0])
+      .build()
+
+    val cv = new CrossValidator()
+      .setEvaluator(new BinaryClassificationEvaluator)
+      .setEstimatorParamMaps(paramGrid)
+      .setNumFolds(2)  // Use 3+ in practice
+
+
+  }
+
+  def auc(spark: SparkSession, data: DataFrame): Unit ={
+    val affairs = "case when affairs>0 then 1 else 0 end as label,"
+    val gender = "case when gender='female' then 0 else 1 end as gender,"
+    val children = "case when children='yes' then 1 else 0 end as children,"
+
+    val sqlDF = spark.sql("select " +
+      affairs +
+      gender +
+      "age,yearsmarried," +
+      children +
+      "religiousness,education,occupation,rating" +
+      " from df ")
+    sqlDF.show(10)
+    val colArray2 = Array("gender", "age", "yearsmarried", "children", "religiousness", "education", "occupation", "rating")
+    val vecDF: DataFrame = new VectorAssembler().setInputCols(colArray2).setOutputCol("features").transform(sqlDF)
+    val Array(trainingDF, testDF) = vecDF.randomSplit(Array(0.7, 0.3), seed = 12345)
+    val lrModel = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").fit(trainingDF)
+
+    println("训练集数量：", trainingDF.count())
+    println("测试集数量：", testDF.count())
+    val predictions = lrModel.transform(testDF)
+
+
+    val evaluator = new BinaryClassificationEvaluator().setLabelCol("label")
+    val auc = evaluator.evaluate(predictions)
+    println("auc:", auc)
+
+    val t = predictions.where("label = prediction").count()
+    println("测试集正确率", t*1.0/testDF.count())
+
+
   }
 
   def dataExplore(data: DataFrame): Unit ={

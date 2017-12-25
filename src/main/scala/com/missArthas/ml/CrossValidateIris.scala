@@ -30,8 +30,10 @@ object CrossValidateIris {
       .toDF()
 
     val Array(trainingData, testData) = data.randomSplit(Array(0.7, 0.3))
+
     val labelIndexer = new StringIndexer().setInputCol("label").setOutputCol("indexedLabel").fit(data)
     val featureIndexer = new VectorIndexer().setInputCol("features").setOutputCol("indexedFeatures").fit(data)
+
     val lr = new LogisticRegression().setLabelCol("indexedLabel").setFeaturesCol("indexedFeatures").setMaxIter(50)
     val labelConverter = new IndexToString().setInputCol("prediction").setOutputCol("predictedLabel").setLabels(labelIndexer.labels)
     val lrPipeline = new Pipeline().setStages(Array(labelIndexer, featureIndexer, lr, labelConverter))
@@ -62,6 +64,7 @@ object CrossValidateIris {
       setPredictionCol("prediction")
 
     val lrAccuracy = evaluator.evaluate(lrPredictions)
+    println("evaluete 结果",lrAccuracy)
 
     val bestModel= cvModel.bestModel.asInstanceOf[PipelineModel]
     val lrModel = bestModel.stages(2).

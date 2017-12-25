@@ -1,18 +1,19 @@
 package com.missArthas.ml
 
 import org.apache.log4j.{Level, Logger}
-import org.apache.spark.ml.Pipeline
+import org.apache.spark.ml.{Pipeline, PipelineModel}
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.DataFrame
-import org.apache.spark.ml.feature.VectorAssembler
-import org.apache.spark.ml.classification.LogisticRegression
-import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, RegressionEvaluator}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.ml.feature._
+import org.apache.spark.ml.classification.{LogisticRegression, LogisticRegressionModel}
+import org.apache.spark.ml.evaluation.{BinaryClassificationEvaluator, MulticlassClassificationEvaluator, RegressionEvaluator}
+import org.apache.spark.ml.linalg.Vector
 import org.apache.spark.ml.tuning.{CrossValidator, ParamGridBuilder, TrainValidationSplit}
 import org.dmg.pmml.False
 
 object LogisticRegressionTest {
   Logger.getLogger("org").setLevel(Level.ERROR)
+  case class Iris(features: org.apache.spark.ml.linalg.Vector, label: String)
   /**
     * 生成数据
     * */
@@ -642,30 +643,25 @@ object LogisticRegressionTest {
     val data = generateData(spark)
     data.createOrReplaceTempView("df")
 
-    //dataExplore(data)
-    //train(spark, data)
-    //auc(spark, data)
-    crossValidate(spark, data)
-
-
-  }
-
-  def train(spark: SparkSession, data: DataFrame): Unit ={
     val affairs = "case when affairs>0 then 1 else 0 end as label,"
-    val gender = "case when gender='female' then 0 else 1 end as gender,"
-    val children = "case when children='yes' then 1 else 0 end as children,"
 
     val sqlDF = spark.sql("select " +
       affairs +
-      gender +
-      "age,yearsmarried," +
-      children +
-      "religiousness,education,occupation,rating" +
-      " from df ")
-    sqlDF.show(10)
-    val colArray2 = Array("gender", "age", "yearsmarried", "children", "religiousness", "education", "occupation", "rating")
-    val vecDF: DataFrame = new VectorAssembler().setInputCols(colArray2).setOutputCol("features").transform(sqlDF)
-    val Array(trainingDF, testDF) = vecDF.randomSplit(Array(0.7, 0.3), seed = 12345)
+      "gender,age,yearsmarried,children,religiousness,education,occupation,rating from df")
+
+    //dataExplore(data)
+    //train(spark, data)
+    //auc(spark, data)
+    //crossValidate(spark, data)
+    val features = featureProcess(sqlDF)
+    //train(features)
+    crossValidate(features)
+
+  }
+
+  def train(data: DataFrame): Unit ={
+
+    val Array(trainingDF, testDF) = data.randomSplit(Array(0.7, 0.3), seed = 12345)
     val lrModel = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").fit(trainingDF)
 
     println("训练集数量：", trainingDF.count())
@@ -698,6 +694,12 @@ object LogisticRegressionTest {
 
     val t = testResult.where("label = prediction").count()
     println("测试集正确率",t*1.0/testDF.count())
+
+    val evaluator = new BinaryClassificationEvaluator().
+      setLabelCol("label")
+
+    val lrAccuracy = evaluator.evaluate(testResult)
+    println("evaluete 结果",lrAccuracy)
     //lrModel.transform(testDF).select("*").show(10, false)
     // Extract the summary from the returned LogisticRegressionModel instance trained in the earlier
     // example
@@ -714,49 +716,50 @@ object LogisticRegressionTest {
 
   }
 
-  def crossValidate(spark: SparkSession, data: DataFrame): Unit ={
-    val affairs = "case when affairs>0 then 1 else 0 end as label,"
-    val gender = "case when gender='female' then 0 else 1 end as gender,"
-    val children = "case when children='yes' then 1 else 0 end as children,"
+  def crossValidate(data: DataFrame): Unit ={
+    println(data.toJSON.show(1))
+    println(data.describe())
 
-    val sqlDF = spark.sql("select " +
-      affairs +
-      gender +
-      "age,yearsmarried," +
-      children +
-      "religiousness,education,occupation,rating" +
-      " from df ")
-    sqlDF.show(10)
-    val colArray2 = Array("gender", "age", "yearsmarried", "children", "religiousness", "education", "occupation", "rating")
-    val vecDF: DataFrame = new VectorAssembler().setInputCols(colArray2).setOutputCol("features").transform(sqlDF)
-    val Array(trainingDF, testDF) = vecDF.randomSplit(Array(0.7, 0.3), seed = 12345)
-    val lrModel = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").fit(trainingDF)
+    println(data.show(10))
+//
+//    val colArray2 = Array("genderVec", "age", "yearsmarried", "childrenVec", "religiousnessVec", "education", "occupationVec", "rating")
+//    val vecDF: DataFrame = new VectorAssembler().setInputCols(colArray2).setOutputCol("features").transform(data)
+    val Array(trainingData, testData) = data.randomSplit(Array(0.6, 0.4))
 
-    println("训练集数量：", trainingDF.count())
-    println("测试集数量：", testDF.count())
-    val predictions = lrModel.transform(testDF)
+    val labelIndexer = new StringIndexer().setInputCol("label").setOutputCol("indexedLabel").fit(data)
+    val featureIndexer = new VectorIndexer().setInputCol("features").setOutputCol("indexedFeatures").fit(data)
+
+    val lr = new LogisticRegression().setLabelCol("indexedLabel").setFeaturesCol("indexedFeatures").setMaxIter(50)
+    val labelConverter = new IndexToString().setInputCol("prediction").setOutputCol("predictedLabel").setLabels(labelIndexer.labels)
+    val lrPipeline = new Pipeline().setStages(Array(labelIndexer, featureIndexer, lr, labelConverter))
+
+    val paramGrid = new ParamGridBuilder().
+      addGrid(lr.elasticNetParam, Array(0.0, 1.0)).
+      addGrid(lr.regParam, Array(0.01, 0.1, 0.5)).
+      build()
+
+    val cv = new CrossValidator().
+      setEstimator(lrPipeline).
+      setEvaluator(new MulticlassClassificationEvaluator().setLabelCol("indexedLabel").setPredictionCol("prediction")).
+      setEstimatorParamMaps(paramGrid).
+      setNumFolds(3) // Use 3+ in practice
+
+    val cvModel = cv.fit(trainingData)
+    val lrPredictions=cvModel.transform(testData)
 
 
-    val evaluator = new BinaryClassificationEvaluator().setLabelCol("label")
-    val auc = evaluator.evaluate(predictions)
-    println("auc:", auc)
+    val evaluator = new BinaryClassificationEvaluator().
+      setLabelCol("label")
 
-    val t = predictions.where("label = prediction").count()
-    println("测试集正确率", t*1.0/testDF.count())
+    val lrAccuracy = evaluator.evaluate(lrPredictions)
+    println("evaluete 结果",lrAccuracy)
 
-
-    val lr = new LogisticRegression()
-      .setMaxIter(10)
-    val paramGrid = new ParamGridBuilder()
-      .addGrid(lr.regParam, Array(0.1, 0.01))
-      .addGrid(lr.fitIntercept, Array(false, true))
-      //.addGrid(lr.elasticNetParam, [0.0, 0.5, 1.0])
-      .build()
-
-    val cv = new CrossValidator()
-      .setEvaluator(new BinaryClassificationEvaluator)
-      .setEstimatorParamMaps(paramGrid)
-      .setNumFolds(2)  // Use 3+ in practice
+    val bestModel= cvModel.bestModel.asInstanceOf[PipelineModel]
+    val lrModel = bestModel.stages(2).
+      asInstanceOf[LogisticRegressionModel]
+    println("Coefficients: " + lrModel.coefficientMatrix + "Intercept: "+lrModel.interceptVector+ "numClasses: "+lrModel.numClasses+"numFeatures: "+lrModel.numFeatures)
+    println(lrModel.explainParam(lrModel.regParam))
+    println(lrModel.explainParam(lrModel.elasticNetParam))
 
 
   }
@@ -799,6 +802,60 @@ object LogisticRegressionTest {
     println(data.describe().show())
     println(data.groupBy("rating").count().show())
 
+  }
+
+  def featureProcess(data: DataFrame): DataFrame ={
+    val genderIndexer = new StringIndexer().setInputCol("gender").setOutputCol("genderIndex").fit(data)
+    val genderIndexed = genderIndexer.transform(data).drop("gender")
+
+    val religiousnessIndexer = new StringIndexer().setInputCol("religiousness").setOutputCol("religiousnessIndex").fit(genderIndexed)
+    val religiousnessIndexed = religiousnessIndexer.transform(genderIndexed).drop("religiousness")
+
+    val childrenIndexer = new StringIndexer().setInputCol("children").setOutputCol("childrenIndex").fit(religiousnessIndexed)
+    val childrenIndexed = childrenIndexer.transform(religiousnessIndexed).drop("children")
+
+    val occupationIndexer = new StringIndexer().setInputCol("occupation").setOutputCol("occupationIndex").fit(childrenIndexed)
+    val occupationIndexed = occupationIndexer.transform(childrenIndexed).drop("occupation")
+
+    val encoded1 = new OneHotEncoder()
+      .setInputCol("genderIndex").setOutputCol("genderVec")
+      .setDropLast(false).transform(occupationIndexed)
+      .drop("genderIndex")
+
+    val encoded2 = new OneHotEncoder()
+      .setInputCol("religiousnessIndex").setOutputCol("religiousnessVec")
+      .setDropLast(false).transform(encoded1)
+      .drop("religiousnessIndex")
+
+    val encoded3 = new OneHotEncoder()
+      .setInputCol("childrenIndex").setOutputCol("childrenVec")
+      .setDropLast(false).transform(encoded2)
+      .drop("childrenIndex")
+
+    val encoded4 = new OneHotEncoder()
+      .setInputCol("occupationIndex").setOutputCol("occupationVec")
+      .setDropLast(false).transform(encoded3)
+      .drop("occupationIndex")
+
+    val colArray2 = Array("age", "yearsmarried", "education", "rating")
+    val vecDF: DataFrame = new VectorAssembler().setInputCols(colArray2).setOutputCol("values").transform(encoded4)
+
+    val merged = vecDF.drop("age", "yearsmarried", "education", "rating")
+
+    val scaler1 = new MinMaxScaler()
+      .setInputCol("values")
+      .setOutputCol("feature")
+      .fit(merged)
+      .transform(merged)
+
+    println(scaler1.show(10))
+
+    val colArray = Array("feature", "genderVec", "religiousnessVec", "childrenVec", "occupationVec")
+    val result: DataFrame = new VectorAssembler().setInputCols(colArray).setOutputCol("features").transform(scaler1)
+
+    val t = result.drop("genderVec", "religiousnessVec", "childrenVec", "occupationVec", "feature", "values")
+    t.toJSON.foreach(s => println(s.toString))
+    t
   }
 
 }

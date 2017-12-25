@@ -3,23 +3,10 @@ package com.missArthas.ml
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.Dataset
-import org.apache.spark.sql.Row
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.Column
-import org.apache.spark.sql.DataFrameReader
-import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.catalyst.encoders.ExpressionEncoder
-import org.apache.spark.sql.Encoder
-import org.apache.spark.sql.DataFrameStatFunctions
-import org.apache.spark.sql.functions._
-import org.apache.spark.ml.linalg.Vectors
 import org.apache.spark.ml.feature.VectorAssembler
-import org.apache.spark.ml.Pipeline
-import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
 import org.apache.spark.ml.classification.LogisticRegression
-import org.apache.spark.ml.classification.{BinaryLogisticRegressionSummary, LogisticRegression}
-import org.apache.spark.ml.tuning.{ParamGridBuilder, TrainValidationSplit}
+import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
 
 object LogisticRegressionTest {
   Logger.getLogger("org").setLevel(Level.ERROR)
@@ -652,7 +639,14 @@ object LogisticRegressionTest {
     val data = generateData(spark)
     data.createOrReplaceTempView("df")
 
-    val affairs = "case when affairs>0 then 1 else 0 end as affairs,"
+    //dataExplore(data)
+    train(spark, data)
+
+
+  }
+
+  def train(spark: SparkSession, data: DataFrame): Unit ={
+    val affairs = "case when affairs>0 then 1 else 0 end as label,"
     val gender = "case when gender='female' then 0 else 1 end as gender,"
     val children = "case when children='yes' then 1 else 0 end as children,"
 
@@ -664,25 +658,23 @@ object LogisticRegressionTest {
       "religiousness,education,occupation,rating" +
       " from df ")
     sqlDF.show(10)
-
     val colArray2 = Array("gender", "age", "yearsmarried", "children", "religiousness", "education", "occupation", "rating")
-
     val vecDF: DataFrame = new VectorAssembler().setInputCols(colArray2).setOutputCol("features").transform(sqlDF)
+    val Array(trainingDF, testDF) = vecDF.randomSplit(Array(0.7, 0.3), seed = 12345)
+    val lrModel = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").fit(trainingDF)
 
-    val Array(trainingDF, testDF) = vecDF.randomSplit(Array(0.9, 0.1), seed = 12345)
-
-    val lrModel = new LogisticRegression().setLabelCol("affairs").setFeaturesCol("features").fit(trainingDF)
+    println("训练集数量：", trainingDF.count())
+    println("测试集数量：", testDF.count())
 
     // 输出逻辑回归的系数和截距
     println(s"Coefficients: ${lrModel.coefficients} Intercept: ${lrModel.intercept}")
-
 
     // 设置ElasticNet混合参数,范围为[0，1]。
     // 对于α= 0，惩罚是L2惩罚。 对于alpha = 1，它是一个L1惩罚。 对于0 <α<1，惩罚是L1和L2的组合。 默认值为0.0，这是一个L2惩罚。
     println("ElasticNet混合参数:", lrModel.getElasticNetParam)
 
     // 正则化参数>=0
-    println("正则化参数:", lrModel.getRegParam  )
+    println("正则化参数:", lrModel.getRegParam)
 
     // 在拟合模型之前,是否标准化特征
     println("在拟合模型之前,是否标准化特征:", lrModel.getStandardization)
@@ -695,8 +687,13 @@ object LogisticRegressionTest {
     println("设置迭代的收敛容限getMaxIter:", lrModel.getMaxIter)
 
 
-    lrModel.transform(testDF).select("features","rawPrediction","probability","prediction").show(10,false)
+    val testResult = lrModel.transform(testDF)
 
+    testResult.select("features","rawPrediction","probability","prediction").show(10, false)
+
+    val t = testResult.where("label = prediction").count()
+    println("测试集正确率",t*1.0/testDF.count())
+    //lrModel.transform(testDF).select("*").show(10, false)
     // Extract the summary from the returned LogisticRegressionModel instance trained in the earlier
     // example
     val trainingSummary = lrModel.summary
@@ -709,6 +706,13 @@ object LogisticRegressionTest {
     /**结果展示
       *
       * */
+  }
+
+  def dataExplore(data: DataFrame): Unit ={
+    println("数据探索")
+    println(data.describe().show())
+    println(data.groupBy("rating").count().show())
 
   }
+
 }

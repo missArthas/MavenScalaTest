@@ -70,7 +70,7 @@ object CrossValidateIris {
     val lrModel = bestModel.stages(2).
       asInstanceOf[LogisticRegressionModel]
     println("Coefficients: " + lrModel.coefficientMatrix + "Intercept: "+lrModel.interceptVector+ "numClasses: "+lrModel.numClasses+"numFeatures: "+lrModel.numFeatures)
-    lrModel.explainParam(lrModel.regParam)
-    lrModel.explainParam(lrModel.elasticNetParam)
+    println(lrModel.explainParam(lrModel.regParam))
+    println(lrModel.explainParam(lrModel.elasticNetParam))
   }
 }

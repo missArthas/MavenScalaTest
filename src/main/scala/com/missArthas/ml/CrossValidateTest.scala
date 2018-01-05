@@ -3,8 +3,8 @@ package com.missArthas.ml
 import org.apache.log4j.{Level, Logger}
 import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.ml.Pipeline
-import org.apache.spark.ml.classification.LogisticRegression
+import org.apache.spark.ml.{Pipeline, PipelineModel}
+import org.apache.spark.ml.classification.{LogisticRegression, LogisticRegressionModel}
 import org.apache.spark.ml.evaluation.BinaryClassificationEvaluator
 import org.apache.spark.ml.feature.{HashingTF, Tokenizer}
 import org.apache.spark.ml.linalg.Vector
@@ -50,19 +50,11 @@ object CrossValidateTest {
     val pipeline = new Pipeline()
       .setStages(Array(tokenizer, hashingTF, lr))
 
-    // We use a ParamGridBuilder to construct a grid of parameters to search over.
-    // With 3 values for hashingTF.numFeatures and 2 values for lr.regParam,
-    // this grid will have 3 x 2 = 6 parameter settings for CrossValidator to choose from.
     val paramGrid = new ParamGridBuilder()
       .addGrid(hashingTF.numFeatures, Array(10, 100, 1000))
       .addGrid(lr.regParam, Array(0.1, 0.01))
       .build()
 
-    // We now treat the Pipeline as an Estimator, wrapping it in a CrossValidator instance.
-    // This will allow us to jointly choose parameters for all Pipeline stages.
-    // A CrossValidator requires an Estimator, a set of Estimator ParamMaps, and an Evaluator.
-    // Note that the evaluator here is a BinaryClassificationEvaluator and its default metric
-    // is areaUnderROC.
     val cv = new CrossValidator()
       .setEstimator(pipeline)
       .setEvaluator(new BinaryClassificationEvaluator)
@@ -87,7 +79,6 @@ object CrossValidateTest {
       .foreach { case Row(id: Long, text: String, prob: Vector, prediction: Double) =>
         println(s"($id, $text) --> prob=$prob, prediction=$prediction")
       }
-
 
   }
 }

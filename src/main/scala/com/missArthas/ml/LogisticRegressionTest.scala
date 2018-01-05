@@ -654,18 +654,22 @@ object LogisticRegressionTest {
     //auc(spark, data)
     //crossValidate(spark, data)
     val features = featureProcess(sqlDF)
-    //train(features)
-    crossValidate(features)
+    train(features)
+    //crossValidate(features)
 
   }
 
   def train(data: DataFrame): Unit ={
 
-    val Array(trainingDF, testDF) = data.randomSplit(Array(0.7, 0.3), seed = 12345)
-    val lrModel = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").fit(trainingDF)
+    val Array(trainingDF, testDF) = data.randomSplit(Array(0.8, 0.2), seed = 12345)
+    val lr = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").setRegParam(0.15).setElasticNetParam(0.1)
+    val lrModel = lr.fit(trainingDF)
 
     println("训练集数量：", trainingDF.count())
     println("测试集数量：", testDF.count())
+
+    println("向量维度：", lrModel.numFeatures)
+
 
     // 输出逻辑回归的系数和截距
     println(s"Coefficients: ${lrModel.coefficients} Intercept: ${lrModel.intercept}")
@@ -707,7 +711,8 @@ object LogisticRegressionTest {
 
     // Obtain the objective per iteration.
     val objectiveHistory = trainingSummary.objectiveHistory
-    objectiveHistory.foreach(loss => println(loss))
+    //objectiveHistory.foreach(loss => println(loss))
+
 
 
     /**
@@ -717,14 +722,8 @@ object LogisticRegressionTest {
   }
 
   def crossValidate(data: DataFrame): Unit ={
-    println(data.toJSON.show(1))
-    println(data.describe())
 
-    println(data.show(10))
-//
-//    val colArray2 = Array("genderVec", "age", "yearsmarried", "childrenVec", "religiousnessVec", "education", "occupationVec", "rating")
-//    val vecDF: DataFrame = new VectorAssembler().setInputCols(colArray2).setOutputCol("features").transform(data)
-    val Array(trainingData, testData) = data.randomSplit(Array(0.6, 0.4))
+    val Array(trainingData, testData) = data.randomSplit(Array(0.8, 0.2))
 
     val labelIndexer = new StringIndexer().setInputCol("label").setOutputCol("indexedLabel").fit(data)
     val featureIndexer = new VectorIndexer().setInputCol("features").setOutputCol("indexedFeatures").fit(data)
@@ -740,7 +739,7 @@ object LogisticRegressionTest {
 
     val cv = new CrossValidator().
       setEstimator(lrPipeline).
-      setEvaluator(new MulticlassClassificationEvaluator().setLabelCol("indexedLabel").setPredictionCol("prediction")).
+      setEvaluator(new BinaryClassificationEvaluator().setLabelCol("indexedLabel").setRawPredictionCol("prediction")).
       setEstimatorParamMaps(paramGrid).
       setNumFolds(3) // Use 3+ in practice
 

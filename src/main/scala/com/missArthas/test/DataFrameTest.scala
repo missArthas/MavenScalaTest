@@ -1,7 +1,8 @@
 package com.missArthas.test
 
 import org.apache.log4j.{Level, Logger}
-import org.apache.spark.sql.SQLContext
+import org.apache.spark.sql.{Row, SQLContext}
+import org.apache.spark.sql.functions.udf
 import org.apache.spark.{SparkConf, SparkContext}
 
 
@@ -61,7 +62,6 @@ object DataFrameTest {
         (108, 11))
     ).toDF("bnum","bid")
 
-
     println("default")
     println(table1.join(table2, table1("aid") === table2("bid")).show())
 
@@ -74,6 +74,17 @@ object DataFrameTest {
     println("right_outer")
     println(table1.join(table2, table1("aid") === table2("bid"), "right_outer").show())
 
+    println("udf1")
+    val t1 = udf((num: Int, bid: Int) => {
+      bid > 5
+    })
+    println(table2.where(t1($"bnum",$"bid")).show())
+
+    println("udf2")
+    sqlContext.udf.register("t2", (num: Int, bid: Int) => {
+      bid > 4
+    })
+    println(table2.selectExpr("t2(bnum, bid)").show())
     /*
     println(ratingDF.show())
     println(moviesDF.show())

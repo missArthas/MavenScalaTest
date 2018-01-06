@@ -20,7 +20,7 @@ object LogisticRegressionTest {
   def generateData(spark: SparkSession):DataFrame = {
     import spark.implicits._
     val dataList: List[(Double, String, Double, Double, String, Double, Double, Double, Double)] = List(
-      (0, "male", 37, 10, "no", 3, 18, 7, 4),
+      (0, null, 37, 10, "no", 3, 18, 7, 4),
       (0, "female", 27, 4, "no", 4, 14, 6, 4),
       (0, "female", 32, 15, "yes", 1, 12, 1, 4),
       (0, "male", 57, 15, "yes", 5, 18, 6, 5),
@@ -662,7 +662,7 @@ object LogisticRegressionTest {
   def train(data: DataFrame): Unit ={
 
     val Array(trainingDF, testDF) = data.randomSplit(Array(0.8, 0.2), seed = 12345)
-    val lr = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").setRegParam(0.15).setElasticNetParam(0.1)
+    val lr = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").setRegParam(0.15).setElasticNetParam(0.1).setMaxIter(15)
     val lrModel = lr.fit(trainingDF)
 
     println("训练集数量：", trainingDF.count())
@@ -804,7 +804,7 @@ object LogisticRegressionTest {
   }
 
   def featureProcess(data: DataFrame): DataFrame ={
-    val genderIndexer = new StringIndexer().setInputCol("gender").setOutputCol("genderIndex").fit(data)
+    val genderIndexer = new StringIndexer().setInputCol("gender").setOutputCol("genderIndex").setHandleInvalid("skip").fit(data)
     val genderIndexed = genderIndexer.transform(data).drop("gender")
 
     val religiousnessIndexer = new StringIndexer().setInputCol("religiousness").setOutputCol("religiousnessIndex").fit(genderIndexed)
@@ -819,7 +819,7 @@ object LogisticRegressionTest {
     val encoded1 = new OneHotEncoder()
       .setInputCol("genderIndex").setOutputCol("genderVec")
       .setDropLast(false).transform(occupationIndexed)
-      .drop("genderIndex")
+      //.drop("genderIndex")
 
     val encoded2 = new OneHotEncoder()
       .setInputCol("religiousnessIndex").setOutputCol("religiousnessVec")

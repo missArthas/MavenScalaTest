@@ -84,7 +84,12 @@ object DataFrameTest {
     sqlContext.udf.register("t2", (num: Int, bid: Int) => {
       bid > 4
     })
-    println(table2.selectExpr("t2(bnum, bid)").show())
+
+    println("add column")
+    print(table1.withColumn("add", org.apache.spark.sql.functions.col("aid")*0).show())
+
+
+    //println(table2.selectExpr("t2(bnum, bid)").show())
     /*
     println(ratingDF.show())
     println(moviesDF.show())

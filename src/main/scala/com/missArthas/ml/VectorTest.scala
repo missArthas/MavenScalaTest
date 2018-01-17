@@ -1,7 +1,7 @@
 package com.missArthas.ml
 
 import org.apache.log4j.{Level, Logger}
-import org.apache.spark.{SparkConf, SparkContext, mllib}
+import org.apache.spark.{SparkConf, SparkContext}
 import org.apache.spark.mllib.linalg
 import org.apache.spark.mllib.linalg.Vectors
 import org.apache.spark.mllib.linalg.distributed.{IndexedRow, IndexedRowMatrix, RowMatrix}
@@ -19,7 +19,7 @@ object VectorTest {
     // Create a sparse vector (1.0, 0.0, 3.0) by specifying its indices and values  corresponding to nonzero entries.
     val sv1: linalg.Vector = Vectors.sparse(5, Array(0, 1), Array(1.0, 3.0))
     // Create a sparse vector (1.0, 0.0, 3.0) by specifying its nonzero entries.
-    val tmp1: linalg.Vector = Vectors.sparse(100, Seq((0, 1.0), (1, 1.0), (2, 0.0)))
+    val tmp1: linalg.Vector = Vectors.sparse(100, Seq((1, 1.0), (0, 1.0)))
     val tmp2: linalg.Vector = Vectors.sparse(100, Seq((0, 1.0), (1, 1.0), (2, 1.0)))
     val tmp3: linalg.Vector = Vectors.sparse(100, Seq((0, 1.0), (1, 1.0), (2, 2.0), (3, 1.0)))
 
@@ -27,7 +27,7 @@ object VectorTest {
     val v2 = new IndexedRow(2, tmp2)
     val v3 = new IndexedRow(3, tmp3)
 
-    val vRDD = sc.parallelize(Array(v1,v2,v3))
+    val vRDD = sc.parallelize(Array(tmp2,tmp3,tmp1))
 
 
 
@@ -41,7 +41,7 @@ object VectorTest {
     }
     println("vRDD")
     vRDD.foreach(println)
-    val matA_sim: IndexedRowMatrix = new IndexedRowMatrix(vRDD)
+    val matA_sim: RowMatrix = new RowMatrix(vRDD)
     println("matA_sim")
     matA_sim.rows.foreach(println)
 

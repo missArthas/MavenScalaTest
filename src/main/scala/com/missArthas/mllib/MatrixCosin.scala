@@ -137,6 +137,8 @@ object MatrixCosin{
 
     println("余弦相似度结果")
     result2.foreach(println)
+    println("take2")
+    result2.take(2).foreach(println)
 
     println("余弦相似度top 2")
 

@@ -1,6 +1,7 @@
 package com.missArthas.test
 
 import org.apache.log4j.{Level, Logger}
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{Row, SQLContext}
 import org.apache.spark.sql.functions.udf
 import org.apache.spark.{SparkConf, SparkContext}
@@ -8,6 +9,15 @@ import org.apache.spark.{SparkConf, SparkContext}
 
 object DataFrameTest {
   Logger.getLogger("org").setLevel(Level.ERROR)
+
+  def func(rating: RDD[(Int, Int, Int,String)]) :RDD[((Long, Long), Double)] = {
+    val result = rating.map{
+      case (uid:Int, mid:Int, score:Int, time:String)=>
+        ((uid.toLong,mid.toLong),score.toDouble)
+    }
+    result
+  }
+
 
   def main(args: Array[String]): Unit = {
 
@@ -35,6 +45,13 @@ object DataFrameTest {
       (fields(0).toInt,fields(1))
     }.toDF("mid","mname")
 
+
+    val t = func(ratingDF.rdd.map {
+      case Row(uid: Int, mid: Int, score: Int, time: String) =>
+        (uid, mid, score, time)
+    })
+    println("func:")
+    ratingDF.take(10).foreach(println)
 
     val table1 = sqlContext.createDataFrame(
       List(
@@ -87,6 +104,10 @@ object DataFrameTest {
 
     println("add column")
     print(table1.withColumn("add", org.apache.spark.sql.functions.col("aid")*0).show())
+    println(table1.schema)
+    println(table1.printSchema())
+
+
 
 
     //println(table2.selectExpr("t2(bnum, bid)").show())

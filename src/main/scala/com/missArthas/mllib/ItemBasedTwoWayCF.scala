@@ -6,32 +6,21 @@ import org.apache.log4j.{Level, Logger}
 import org.apache.spark.{SparkConf, SparkContext, sql}
 import org.apache.spark.rdd.RDD
 import java.sql.Timestamp
+import java.text.DecimalFormat
+
 import scala.collection.JavaConversions.seqAsJavaList
 import org.apache.spark.rdd.RDD.rddToPairRDDFunctions
-
+import org.apache.spark.sql.{DataFrame, Row, SQLContext}
 
 class ItemBasedTwoWayCF extends java.io.Serializable {
 
-//  def orderingTopKForCf() = {
-//    com.google.common.collect.Ordering.from(new Comparator[(Int,Double)] {
-//          override def compare(o1: (Int,Double), o2: (Int,Double)): Int = {
-//            Doubles.compare(o1._2, o2._2)
-//          }
-//    })
-//  }
-//
-//
+
   def simLine(sim: RDD[(Long, Long, Double)]) = {
     val albumSimLine = sim.map{case (catA,catB,sim) => (catA,Seq((catB,sim)))}.reduceByKey((s,t) => s.union(t))
-      .map { case (id, scores) => (id, scores.sortWith(_._2 > _._2).take(20)) }
+      .map{case (id,scores) => (id,scores.sortWith(_._2 > _._2).take(20)) }
     albumSimLine
   }
-  
-  def albumSimTriColumn( cutNumSim: RDD[(Long, Array[(Long, Double)])]) = {
-    cutNumSim.flatMap{case (albumIdA,relatedAlbum) =>
-      relatedAlbum.map{case (albumIdB,score) => s"$albumIdA\t$albumIdB\t$score"}
-    }
-  }
+
 
   /**
     * 计算专辑的相关专辑,按相似度排序,取前20名
@@ -96,33 +85,59 @@ class ItemBasedTwoWayCF extends java.io.Serializable {
     }
     (catPairFrequencySim,catFrequency)
   }
-
 }
-object ItemBasedTwoWayCF{
+
+object ItemBasedTwoWayCF extends java.io.Serializable{
   Logger.getLogger("org").setLevel(Level.ERROR)
+
   def main(args: Array[String]): Unit = {
+    val starttime=System.nanoTime
     val conf = new SparkConf().setAppName("Simple Application").setMaster("local")
     val sc = new SparkContext(conf)
-    val album = "data/behaviorWithTime.txt"
+    val sqlContext = new SQLContext(sc)
+    val data = "data/behaviorWithTime.txt"
 
-    val scoreMatrix: RDD[(Long, Long, Long)] = sc.textFile(album, 2).cache().map { line =>
-      var fields = line.split(",")
+    import sqlContext.implicits._
+    val ratingDF = sc.textFile(data, 2).cache().map{ line =>
+      val fields = line.split(" ")
       (fields(0).toLong, fields(1).toLong, fields(2).toLong)
     }
-    val cf = new ItemBasedTwoWayCF
+      //.toDF("userID","itemID","time")
 
-    import java.text.SimpleDateFormat
-    val sdf = new SimpleDateFormat("yyyy-MM-dd")
-    val date1 = sdf.parse("2011-02-04")
-    val date2 = sdf.parse("2011-01-06")
-    println((date2.getTime-date1.getTime) / (1000*3600*24))
-    println((1452741307 - 1463985631)/(3600*24))
 
-    //val result1 = cf.albumSim(sc, scoreMatrix)
+    val cf = new ItemBasedTwoWayCF()
 
-    //result1.take(10).foreach(println)
+    val itemList = List(1, 2).toDF("userID")
+    val result3 = cf.albumSim(sc, ratingDF)
+
+    println("排序计算结果")
+    result3.foreach(s => println(s._1 + " " + s._2.toSeq))
 
   }
-}
 
+  /**
+    * X->B,C,D
+    *
+    * @param result
+    * @return X->B,C,D
+    *         B->X
+    *         C->X
+    *         D->X
+    */
+  private def linkOldAlbum(result: RDD[(Long, Array[(Long, Float)])]): RDD[(Long, Array[(Long, Float)])]={
+
+    val reverseItem = result.flatMap{
+      case (itemID, arr) =>
+        val list = arr.toList
+        //子集配对
+        val reverseItem = list.map { t => (t._1, Array((itemID, t._2))) }
+        reverseItem
+    }.reduceByKey((a, b) => a.union(b)).union(result).reduceByKey((a, b) => a.union(b))
+
+    val finalResult = reverseItem.map{case (id,scores) => (id,scores.distinct.sortWith(_._2 > _._2)) }
+
+    finalResult
+  }
+
+}
 

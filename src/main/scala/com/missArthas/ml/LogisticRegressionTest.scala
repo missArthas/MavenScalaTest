@@ -662,7 +662,7 @@ object LogisticRegressionTest {
   def train(data: DataFrame): Unit ={
 
     val Array(trainingDF, testDF) = data.randomSplit(Array(0.8, 0.2), seed = 12345)
-    val lr = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").setRegParam(0.15).setElasticNetParam(0.1).setMaxIter(15)
+    val lr = new LogisticRegression().setLabelCol("label").setFeaturesCol("features").setRegParam(0.0001).setElasticNetParam(0).setMaxIter(100)
     val lrModel = lr.fit(trainingDF)
 
     println("训练集数量：", trainingDF.count())
